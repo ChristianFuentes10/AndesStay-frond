@@ -9,6 +9,7 @@ export const azure = {
   redirectUri: window.location.origin,                    // debe ser http://localhost:4200 (igual que en Azure)
   apiBaseUrl: 'http://localhost:8080',                    // BFF; cambiar a la URL real al desplegar
   notifyApiUrl: 'http://localhost:8080',                  // URL del API Gateway o Notify; cambiar si es independiente del BFF
+  notifyBaseUrl: 'http://localhost:8082',                 // Microservicio notify independiente (docker en 8082)
 };
 
 // Roles de aplicación (claim "roles" del access token, los mismos que exige el BFF) que abren el panel de administración.

@@ -17,6 +17,9 @@ const interceptorConfig = (): MsalInterceptorConfiguration => {
   if (azure.notifyApiUrl && azure.notifyApiUrl !== azure.apiBaseUrl) {
     map.set(azure.notifyApiUrl + '*', [azure.scope]);
   }
+  if (azure.notifyBaseUrl && azure.notifyBaseUrl !== azure.apiBaseUrl) {
+    map.set(azure.notifyBaseUrl + '*', [azure.scope]);
+  }
   return {
     interactionType: InteractionType.Redirect,
     protectedResourceMap: map,

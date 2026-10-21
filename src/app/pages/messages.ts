@@ -1,11 +1,13 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
-import { Api, NotificacionDto, EnviarNotificacionBody } from '../core/api';
+import { NotifyService, NotificacionDto, EnviarDto } from '../core/notify';
 import { Store } from '../core/store';
 import { azure } from '../core/auth-config';
 import { Chat } from './chat';
+
+type Canal = 'EMAIL' | 'VOUCHER' | 'HOUSEKEEPING';
 
 @Component({
   selector: 'app-messages',
@@ -13,149 +15,219 @@ import { Chat } from './chat';
   imports: [CommonModule, FormsModule, Chat],
   styles: [`
     .wrap { display: flex; flex-direction: column; gap: 20px; }
+
+    /* Pestañas */
     .tabs { display: flex; gap: 8px; border-bottom: 1px solid var(--b); padding-bottom: 8px; }
-    .tab { background: transparent; border: 0; color: var(--m); padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600; }
+    .tab { background: transparent; border: 0; color: var(--m); padding: 8px 16px;
+           border-radius: 8px 8px 0 0; cursor: pointer; font-weight: 600; font: inherit; }
     .tab.on { background: var(--p2); color: var(--g); border-bottom: 2px solid var(--g); }
-    .grid-notify { display: grid; grid-template-columns: 340px 1fr; gap: 20px; }
-    @media(max-width: 900px) { .grid-notify { grid-template-columns: 1fr; } }
-    .form-box { display: flex; flex-direction: column; gap: 14px; }
+
+    /* Grid principal notify */
+    .notify-grid { display: grid; grid-template-columns: 380px 1fr; gap: 20px; }
+    @media(max-width: 1000px) { .notify-grid { grid-template-columns: 1fr; } }
+
+    /* Formulario */
+    .form-wrap { display: flex; flex-direction: column; gap: 14px; }
     .field { display: flex; flex-direction: column; gap: 6px; }
-    .field label { font-size: 12px; color: var(--m); font-weight: 500; }
-    .status-ok { background: rgba(34,197,94,0.15); border: 1px solid var(--g); color: #86efac; padding: 10px; border-radius: 8px; font-size: 13px; }
-    .status-err { background: rgba(239,68,68,0.15); border: 1px solid var(--r); color: #fca5a5; padding: 10px; border-radius: 8px; font-size: 13px; }
-    .notif-card { background: var(--p2); border: 1px solid var(--b); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 8px; transition: .15s; }
-    .notif-card:hover { border-color: var(--g); }
-    .badge.EMAIL { background: #1e3a8a; color: #bfdbfe; }
-    .badge.SMS { background: #701a75; color: #f5d0fe; }
-    .badge.PUSH { background: #14532d; color: #bbf7d0; }
-    .badge.ALERTA { background: #7c2d12; color: #fed7aa; }
+    .field label { font-size: 12px; color: var(--m); font-weight: 600;
+                   text-transform: uppercase; letter-spacing: 0.5px; }
+
+    /* Selector de canal */
+    .canal-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .canal-btn { border: 1px solid var(--b); background: var(--p2); color: var(--m);
+                 border-radius: 10px; padding: 10px 6px; cursor: pointer; font: inherit;
+                 font-size: 12px; font-weight: 600; text-align: center;
+                 display: flex; flex-direction: column; align-items: center; gap: 4px;
+                 transition: .15s; }
+    .canal-btn:hover { border-color: var(--g); color: var(--t); }
+    .canal-btn.sel { border-color: var(--g); background: rgba(34,197,94,0.12);
+                     color: var(--g); }
+    .canal-btn span.ic { font-size: 20px; }
+
+    /* Alertas de estado */
+    .alert { padding: 10px 14px; border-radius: 8px; font-size: 13px; }
+    .alert.ok  { background: rgba(34,197,94,.12); border: 1px solid var(--g); color: #86efac; }
+    .alert.err { background: rgba(239,68,68,.12);  border: 1px solid var(--r); color: #fca5a5; }
+    .alert.warn{ background: rgba(234,179,8,.12);  border: 1px solid var(--y); color: #fde68a; }
+
+    /* Tabla historial */
+    .hist-header { display: flex; align-items: center; justify-content: space-between; }
+    .estado-badge { padding: 2px 10px; border-radius: 99px; font-size: 11px; font-weight: 700; }
+    .estado-badge.ENVIADA      { background:#14532d; color:#4ade80; }
+    .estado-badge.PENDIENTE    { background:#1e3a8a; color:#93c5fd; }
+    .estado-badge.FALLIDA      { background:#7f1d1d; color:#fca5a5; }
+    .estado-badge.SIMULADO     { background:#3b3200; color:#fde68a; }
+
+    /* Chat cabañas */
     .g-chat { display: grid; grid-template-columns: 280px 1fr; gap: 16px; height: 70vh; }
-    .it { padding: 10px; border-radius: 10px; cursor: pointer; }
+    .it { padding: 10px; border-radius: 10px; cursor: pointer; transition:.1s; }
     .it:hover, .it.on { background: var(--p2); }
+    .empty-state { padding: 40px 16px; text-align: center; color: var(--m); }
+    .empty-state .ic { font-size: 36px; margin-bottom: 8px; }
   `],
   template: `
     <div class="wrap">
-      <div class="row sp">
+
+      <!-- Encabezado -->
+      <div class="row sp" style="flex-wrap:wrap; gap:12px">
         <div>
-          <h2>Centro de Mensajes y Notificaciones</h2>
-          <p class="muted" style="font-size:13px">
-            Envío y recepción de alertas integradas con el microservicio <b>Notify</b> (AWS / API Gateway).
+          <h2 style="margin-bottom:4px">Centro de Mensajes</h2>
+          <p class="muted" style="font-size:12px">
+            Notify · <code>{{ notifyUrl }}</code>
           </p>
         </div>
-        <div class="row">
-          <span class="muted" style="font-size:12px">Endpoint: <code>{{ endpoint }}</code></span>
-        </div>
       </div>
 
+      <!-- Pestañas -->
       <div class="tabs">
-        <button class="tab" [class.on]="activeTab() === 'notify'" (click)="activeTab.set('notify')">
-          🔔 Notificaciones (POST /enviar · GET /api/v1/notificaciones)
+        <button class="tab" [class.on]="tab()==='notify'" (click)="tab.set('notify')">
+          🔔 Notificaciones
         </button>
-        <button class="tab" [class.on]="activeTab() === 'chat'" (click)="activeTab.set('chat')">
-          💬 Chat de Cabañas (Huésped / Anfitrión)
+        <button class="tab" [class.on]="tab()==='chat'" (click)="tab.set('chat')">
+          💬 Chat de Cabañas
         </button>
       </div>
 
-      @if (activeTab() === 'notify') {
-        <div class="grid-notify">
-          <!-- Formulario de Envío -->
-          <div class="card form-box">
-            <h3 style="font-size:16px">✉ Enviar Notificación</h3>
+      <!-- ===== PESTAÑA NOTIFY ===== -->
+      @if (tab() === 'notify') {
+        <div class="notify-grid">
+
+          <!-- Formulario de envío -->
+          <div class="card form-wrap">
+            <h3 style="font-size:15px; margin-bottom:4px">✉ Enviar Notificación</h3>
             <p class="muted" style="font-size:12px">
-              Dispara un evento a través de <code>POST /enviar</code> para notificar al huésped o usuario.
+              POST <code>/api/v1/notificaciones/enviar</code>
             </p>
 
-            @if (successMsg()) {
-              <div class="status-ok">✔ {{ successMsg() }}</div>
-            }
-            @if (errorMsg()) {
-              <div class="status-err">⚠ {{ errorMsg() }}</div>
-            }
+            @if (okMsg()) { <div class="alert ok">✔ {{ okMsg() }}</div> }
+            @if (errMsg()) { <div class="alert err">⚠ {{ errMsg() }}</div> }
+            @if (warnMsg()){ <div class="alert warn">⏳ {{ warnMsg() }}</div> }
 
-            <form (ngSubmit)="enviar()" class="form-box">
+            <form (ngSubmit)="enviar()" class="form-wrap">
+
+              <!-- Selector de canal -->
               <div class="field">
-                <label>Destinatario (Email o ID de usuario)</label>
-                <input class="inp" type="text" [(ngModel)]="destinatario" name="destinatario" placeholder="ej. usuario@andesstay.cl" required>
+                <label>Canal</label>
+                <div class="canal-grid">
+                  <button type="button" class="canal-btn" [class.sel]="canal==='EMAIL'"
+                          (click)="canal='EMAIL'">
+                    <span class="ic">📧</span>Email
+                  </button>
+                  <button type="button" class="canal-btn" [class.sel]="canal==='VOUCHER'"
+                          (click)="canal='VOUCHER'">
+                    <span class="ic">🎟️</span>Voucher
+                  </button>
+                  <button type="button" class="canal-btn" [class.sel]="canal==='HOUSEKEEPING'"
+                          (click)="canal='HOUSEKEEPING'">
+                    <span class="ic">🛎️</span>Housekeeping
+                  </button>
+                </div>
               </div>
 
               <div class="field">
-                <label>Canal / Tipo</label>
-                <select class="inp" [(ngModel)]="tipo" name="tipo">
-                  <option value="EMAIL">Email</option>
-                  <option value="SMS">SMS</option>
-                  <option value="PUSH">Notificación Push</option>
-                  <option value="ALERTA">Alerta de Reserva</option>
-                </select>
+                <label>Nombre del Destinatario</label>
+                <input class="inp" name="nombre" [(ngModel)]="nombre"
+                       placeholder="Nombre completo">
               </div>
 
               <div class="field">
-                <label>Asunto / Título (Opcional)</label>
-                <input class="inp" type="text" [(ngModel)]="asunto" name="asunto" placeholder="ej. Confirmación de Reserva">
+                <label>Email del Destinatario</label>
+                <input class="inp" name="email" type="email" [(ngModel)]="email"
+                       placeholder="correo@ejemplo.cl" required>
+              </div>
+
+              <div class="field">
+                <label>Asunto</label>
+                <input class="inp" name="asunto" [(ngModel)]="asunto"
+                       placeholder="ej. Confirmación de Reserva">
               </div>
 
               <div class="field">
                 <label>Mensaje</label>
-                <textarea class="inp" rows="4" [(ngModel)]="mensaje" name="mensaje" placeholder="Escribe el contenido de la notificación..." required></textarea>
+                <textarea class="inp" name="mensaje" rows="4" [(ngModel)]="mensaje"
+                          placeholder="Contenido de la notificación..." required></textarea>
               </div>
 
-              <button class="btn" type="submit" [disabled]="loadingSend()">
-                {{ loadingSend() ? 'Enviando...' : '➤ Enviar Notificación' }}
+              <button class="btn" type="submit" [disabled]="sending()">
+                {{ sending() ? 'Enviando...' : '➤ Enviar' }}
               </button>
             </form>
           </div>
 
-          <!-- Historial de Notificaciones -->
-          <div class="card" style="display:flex; flex-direction:column; gap:16px">
-            <div class="row sp">
+          <!-- Historial -->
+          <div class="card" style="display:flex;flex-direction:column;gap:14px">
+            <div class="hist-header">
               <div>
-                <h3 style="font-size:16px">📜 Historial de Notificaciones</h3>
-                <span class="muted" style="font-size:12px">Consultando <code>GET /api/v1/notificaciones</code></span>
+                <h3 style="font-size:15px; margin-bottom:2px">📜 Historial</h3>
+                <span class="muted" style="font-size:12px">
+                  GET <code>/api/v1/notificaciones</code>
+                </span>
               </div>
-              <button class="btn sm ghost" (click)="cargarNotificaciones()" [disabled]="loadingList()">
-                {{ loadingList() ? 'Cargando...' : '🔄 Actualizar' }}
+              <button class="btn sm ghost" (click)="cargar()" [disabled]="loading()">
+                {{ loading() ? '⏳' : '🔄' }} Actualizar
               </button>
             </div>
 
-            @if (loadingList()) {
-              <p class="muted" style="padding:20px; text-align:center">Cargando notificaciones del servicio...</p>
-            } @else if (notificaciones().length === 0) {
-              <div style="padding:32px 16px; text-align:center" class="muted">
-                <div style="font-size:32px; margin-bottom:8px">📭</div>
-                <p>No hay notificaciones registradas todavía.</p>
-                <small>Envía una notificación desde el formulario para verla reflejada.</small>
+            @if (loading()) {
+              <p class="muted" style="text-align:center; padding:20px">
+                Cargando historial...
+              </p>
+            } @else if (lista().length === 0) {
+              <div class="empty-state">
+                <div class="ic">📭</div>
+                <p>Sin notificaciones todavía.</p>
+                <small>Envía una para verla aquí. El consumer procesa de forma asíncrona.</small>
               </div>
             } @else {
-              <div style="display:flex; flex-direction:column; gap:10px; max-height:600px; overflow-y:auto; padding-right:4px">
-                @for (n of notificaciones(); track $index) {
-                  <div class="notif-card">
-                    <div class="row sp">
-                      <div class="row">
-                        <span class="badge" [ngClass]="n.tipo || 'EMAIL'">{{ n.tipo || 'NOTIFY' }}</span>
-                        <b>{{ n.asunto || 'Notificación del Sistema' }}</b>
-                      </div>
-                      <small class="muted">{{ formatFecha(n.fecha || n.createdAt || n.timestamp) }}</small>
-                    </div>
-                    <p style="font-size:13px; line-height:1.4">{{ n.mensaje || n.contenido || '(Sin contenido)' }}</p>
-                    <div class="row sp" style="font-size:11px; margin-top:4px">
-                      <span class="muted">Para: <b>{{ n.destinatario || n.email || 'Usuario' }}</b></span>
-                      <span [class.green]="n.estado !== 'FALLIDO'" class="muted">
-                        {{ n.estado || 'Enviado con éxito' }}
-                      </span>
-                    </div>
-                  </div>
-                }
+              <div style="overflow-x:auto">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Canal</th>
+                      <th>Destinatario</th>
+                      <th>Asunto</th>
+                      <th>Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (n of lista(); track $index) {
+                      <tr>
+                        <td style="font-size:12px; white-space:nowrap">
+                          {{ fmt(n.fecha || n.createdAt || n.timestamp) }}
+                        </td>
+                        <td>
+                          <span class="badge">{{ n.canal || n.tipo || '—' }}</span>
+                        </td>
+                        <td style="font-size:12px; max-width:160px; overflow:hidden;
+                                   text-overflow:ellipsis; white-space:nowrap">
+                          {{ n.destinatario || n.email || '—' }}
+                        </td>
+                        <td style="font-size:12px">{{ n.asunto || n.mensaje || '—' }}</td>
+                        <td>
+                          <span class="estado-badge"
+                                [ngClass]="estadoClass(n.estado)">
+                            {{ n.estado || 'ENVIADA' }}
+                          </span>
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
               </div>
             }
           </div>
+
         </div>
       }
 
-      @if (activeTab() === 'chat') {
+      <!-- ===== PESTAÑA CHAT ===== -->
+      @if (tab() === 'chat') {
         <div class="g-chat">
           <div class="card">
-            <h3 style="margin-bottom:8px">Conversaciones de Cabaña</h3>
+            <h3 style="margin-bottom:8px">Conversaciones</h3>
             @for (c of s.cabins(); track c.id) {
-              <div class="it" [class.on]="cur() === c.id" (click)="sel.set(c.id)">
+              <div class="it" [class.on]="cur()===c.id" (click)="sel.set(c.id)">
                 <b>{{ c.name }}</b>
                 <div class="muted" style="font-size:12px">{{ c.place }}</div>
               </div>
@@ -166,128 +238,143 @@ import { Chat } from './chat';
           </div>
         </div>
       }
+
     </div>
   `
 })
 export class Messages implements OnInit {
   s = inject(Store);
-  private api = inject(Api);
+  private notify = inject(NotifyService);
 
-  endpoint = azure.notifyApiUrl || azure.apiBaseUrl;
-  activeTab = signal<'notify' | 'chat'>('notify');
+  readonly notifyUrl = azure.notifyBaseUrl || azure.notifyApiUrl || azure.apiBaseUrl;
 
-  // Formulario
-  destinatario = '';
-  asunto = '';
-  tipo = 'EMAIL';
+  // Pestaña activa
+  tab = signal<'notify' | 'chat'>('notify');
+
+  // Formulario — se precargan datos del usuario logueado
+  canal: Canal = 'EMAIL';
+  nombre  = this.s.user()?.name  || '';
+  email   = this.s.user()?.email || '';
+  asunto  = '';
   mensaje = '';
 
-  loadingSend = signal(false);
-  loadingList = signal(false);
-  successMsg = signal('');
-  errorMsg = signal('');
+  // Estados UI
+  sending  = signal(false);
+  loading  = signal(false);
+  okMsg    = signal('');
+  errMsg   = signal('');
+  warnMsg  = signal('');
 
-  notificaciones = signal<NotificacionDto[]>([]);
+  // Historial
+  lista = signal<NotificacionDto[]>([]);
 
-  // Para el chat
+  // Chat
   sel = signal<number | null>(null);
   cur = () => this.sel() ?? this.s.cabins()[0]?.id ?? 0;
 
-  ngOnInit() {
-    this.cargarNotificaciones();
-  }
+  ngOnInit() { this.cargar(); }
 
-  async cargarNotificaciones() {
-    this.loadingList.set(true);
+  // ─── Cargar historial ────────────────────────────────────────────────────
+  async cargar() {
+    this.loading.set(true);
     try {
-      const res = await firstValueFrom(this.api.notificaciones());
-      const items = Array.isArray(res) ? res : res?.content || [];
-      this.notificaciones.set(items);
+      const res = await firstValueFrom(this.notify.historial());
+      const items: NotificacionDto[] = Array.isArray(res)
+        ? res
+        : res?.content ?? [];
+      this.lista.set(items);
     } catch (e: any) {
-      // Si el endpoint aún no está desplegado o da error de conexión, conservamos un historial local amigable
-      if (this.notificaciones().length === 0) {
-        this.notificaciones.set([
-          {
-            id: 1,
-            destinatario: this.s.user()?.email || 'huesped@andesstay.cl',
-            asunto: 'Bienvenido a AndesStay',
-            tipo: 'EMAIL',
-            mensaje: 'Tu cuenta ha sido activada y puedes consultar las mejores cabañas de la cordillera.',
-            fecha: new Date().toISOString(),
-            estado: 'ENTREGADO'
-          }
-        ]);
+      // Si notify aún no está levantado, mantenemos lo que hay (o vacío)
+      if (this.lista().length === 0) {
+        this.errMsg.set(this.httpError(e, 'GET /api/v1/notificaciones'));
+        this.clearMsg(6000);
       }
     } finally {
-      this.loadingList.set(false);
+      this.loading.set(false);
     }
   }
 
+  // ─── Enviar ──────────────────────────────────────────────────────────────
   async enviar() {
-    if (!this.destinatario.trim() || !this.mensaje.trim()) {
-      this.errorMsg.set('El destinatario y el mensaje son obligatorios.');
+    if (!this.email.trim() || !this.mensaje.trim()) {
+      this.errMsg.set('El email y el mensaje son obligatorios.');
+      this.clearMsg(4000);
       return;
     }
 
-    this.loadingSend.set(true);
-    this.successMsg.set('');
-    this.errorMsg.set('');
+    this.sending.set(true);
+    this.okMsg.set(''); this.errMsg.set(''); this.warnMsg.set('');
 
-    const body: EnviarNotificacionBody = {
-      destinatario: this.destinatario.trim(),
-      email: this.destinatario.trim(),
-      asunto: this.asunto.trim() || undefined,
-      tipo: this.tipo,
-      mensaje: this.mensaje.trim(),
-      fecha: new Date().toISOString()
+    const body: EnviarDto = {
+      canal:        this.canal,
+      destinatario: this.nombre.trim() || this.email.trim(),
+      email:        this.email.trim(),
+      nombre:       this.nombre.trim() || undefined,
+      asunto:       this.asunto.trim() || undefined,
+      mensaje:      this.mensaje.trim(),
     };
 
     try {
-      await firstValueFrom(this.api.enviarNotificacion(body));
-      this.successMsg.set('¡Notificación enviada correctamente al servicio Notify!');
-      this.limpiarForm();
-      await this.cargarNotificaciones();
+      await firstValueFrom(this.notify.enviar(body));
+      this.okMsg.set('Notificación enviada al producer. El consumer la procesa en breve.');
+      this.limpiar();
+      // Refresco automático con delay (consumer asíncrono con RabbitMQ)
+      this.warnMsg.set('Actualizando historial en 3 s...');
+      setTimeout(() => { this.warnMsg.set(''); this.cargar(); }, 3000);
     } catch (e: any) {
-      // Si el servicio responde o si no está disponible, informamos con detalle pero guardamos localmente para prueba
       const st = e?.status;
-      if (st === 401 || st === 403) {
-        this.errorMsg.set(`Error de autorización (${st}): Verifica el token y roles en Azure/API Gateway.`);
+      if (!st || st === 0) {
+        // notify caído o CORS
+        this.errMsg.set('No se pudo conectar con notify en ' + this.notifyUrl +
+          '. Verifica que esté corriendo (docker compose up).');
       } else {
-        // En modo demostración / desarrollo local si el backend no está disponible:
-        this.notificaciones.update(list => [{
+        this.errMsg.set(this.httpError(e, 'POST /enviar'));
+        // En demo local: agregar al listado como simulado
+        this.lista.update(l => [{
+          ...body,
           id: Date.now(),
-          destinatario: body.destinatario,
-          asunto: body.asunto,
-          tipo: body.tipo,
-          mensaje: body.mensaje,
           fecha: new Date().toISOString(),
-          estado: 'SIMULADO (Backend no respondió)'
-        }, ...list]);
-        this.successMsg.set('Notificación registrada (modo demo / esperando conexión con Notify en ' + this.endpoint + ').');
-        this.limpiarForm();
+          estado: 'PENDIENTE',
+        }, ...l]);
       }
     } finally {
-      this.loadingSend.set(false);
-      setTimeout(() => {
-        this.successMsg.set('');
-        this.errorMsg.set('');
-      }, 6000);
+      this.sending.set(false);
+      this.clearMsg(7000);
     }
   }
 
-  private limpiarForm() {
-    this.destinatario = '';
-    this.asunto = '';
-    this.mensaje = '';
+  // ─── Helpers ─────────────────────────────────────────────────────────────
+  private limpiar() {
+    this.asunto = ''; this.mensaje = '';
   }
 
-  formatFecha(d?: string) {
-    if (!d) return 'Hoy';
+  private clearMsg(ms: number) {
+    setTimeout(() => { this.okMsg.set(''); this.errMsg.set(''); this.warnMsg.set(''); }, ms);
+  }
+
+  private httpError(e: any, ctx: string): string {
+    const st = e?.status;
+    const msg = e?.error?.message || e?.error || '';
+    if (st === 400) return `400 Bad Request en ${ctx}: ${msg || 'Datos inválidos.'}`;
+    if (st === 401) return `401 No autorizado en ${ctx}. Verifica el token JWT de Azure.`;
+    if (st === 403) return `403 Acceso denegado en ${ctx}. Verifica los roles del token.`;
+    if (st === 503) return `503 Servicio no disponible en ${ctx}. RabbitMQ o notify no responden.`;
+    return `Error ${st || 'de red'} en ${ctx}. ${msg}`;
+  }
+
+  estadoClass(estado?: string): string {
+    if (!estado) return 'ENVIADA';
+    if (estado.startsWith('SIM'))  return 'SIMULADO';
+    return estado;
+  }
+
+  fmt(d?: string): string {
+    if (!d) return '—';
     try {
-      const date = new Date(d);
-      return isNaN(date.getTime()) ? d : date.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
-    } catch {
-      return d;
-    }
+      return new Date(d).toLocaleString('es-CL', {
+        day: '2-digit', month: '2-digit',
+        hour: '2-digit', minute: '2-digit'
+      });
+    } catch { return d; }
   }
 }
