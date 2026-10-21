@@ -11,11 +11,17 @@ import { azure, msalConfig } from './app/core/auth-config';
 @Component({ selector: 'app-root', standalone: true, imports: [RouterOutlet], template: '<router-outlet/>' })
 class App {}
 
-// El interceptor adjunta el access token a toda llamada que vaya al BFF.
-const interceptorConfig = (): MsalInterceptorConfiguration => ({
-  interactionType: InteractionType.Redirect,
-  protectedResourceMap: new Map([[azure.apiBaseUrl + '*', [azure.scope]]]),
-});
+// El interceptor adjunta el access token a toda llamada que vaya al BFF o al servicio Notify/API Gateway.
+const interceptorConfig = (): MsalInterceptorConfiguration => {
+  const map = new Map<string, string[]>([[azure.apiBaseUrl + '*', [azure.scope]]]);
+  if (azure.notifyApiUrl && azure.notifyApiUrl !== azure.apiBaseUrl) {
+    map.set(azure.notifyApiUrl + '*', [azure.scope]);
+  }
+  return {
+    interactionType: InteractionType.Redirect,
+    protectedResourceMap: map,
+  };
+};
 
 bootstrapApplication(App, {
   providers: [

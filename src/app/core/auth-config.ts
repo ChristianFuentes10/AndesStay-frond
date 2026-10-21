@@ -8,6 +8,7 @@ export const azure = {
   scope: 'api://0c8e7680-da3e-46b5-b400-5d45ee4dda46/access-all',
   redirectUri: window.location.origin,                    // debe ser http://localhost:4200 (igual que en Azure)
   apiBaseUrl: 'http://localhost:8080',                    // BFF; cambiar a la URL real al desplegar
+  notifyApiUrl: 'http://localhost:8080',                  // URL del API Gateway o Notify; cambiar si es independiente del BFF
 };
 
 // Roles de aplicación (claim "roles" del access token, los mismos que exige el BFF) que abren el panel de administración.

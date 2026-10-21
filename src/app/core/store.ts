@@ -7,7 +7,15 @@ export interface Cabin { id: number; name: string; place: string; price: number;
 export interface Booking { id: number; cabinId: number; user: string; date: string; nights: number; status: Status; total?: number; }
 export type Status = 'Confirmada' | 'Pendiente' | 'Cancelada' | 'Check-in' | 'Check-out';
 export interface Msg { cabinId: number; from: 'user' | 'host'; text: string; time: string; }
-export interface User { name: string; email: string; role: 'admin' | 'user'; roles?: string[]; }
+export interface User {
+  name: string;
+  firstName?: string;
+  lastName?: string;
+  email: string;
+  phone?: string;
+  role: 'admin' | 'user';
+  roles?: string[];
+}
 const STATUS: Record<string, Status> = { PENDIENTE: 'Pendiente', CONFIRMADA: 'Confirmada', CHECKIN: 'Check-in', CHECKOUT: 'Check-out', CANCELADA: 'Cancelada' };
 const TYPES: Record<string, string> = { CABANA: 'Cabaña', HABITACION: 'Habitación', LODGE: 'Lodge' };
 const IMGS = [U('photo-1449158743715-0a90ebb6d2d8'), U('photo-1510798831971-661eb04b3739'), U('photo-1587061949409-02df41d5e562'), U('photo-1518780664697-55e3ad937233')];

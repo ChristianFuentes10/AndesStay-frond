@@ -42,9 +42,33 @@ export class Auth {
 
   private build(acc: AccountInfo, c: Claims): User {
     const roles: string[] = Array.isArray(c['roles']) ? c['roles'] : [];
+    const fullName = c['name'] || acc.name || acc.username;
+    
+    // Desglosar nombre y apellido
+    let firstName = c['given_name'];
+    let lastName = c['family_name'];
+    if (!firstName && !lastName && fullName) {
+      const parts = fullName.trim().split(/\s+/);
+      if (parts.length >= 3) {
+        firstName = parts.slice(0, 2).join(' ');
+        lastName = parts.slice(2).join(' ');
+      } else if (parts.length === 2) {
+        firstName = parts[0];
+        lastName = parts[1];
+      } else {
+        firstName = fullName;
+        lastName = '';
+      }
+    }
+
+    const savedPhone = localStorage.getItem('as_phone') || '+56 9 8452 1980';
+
     return {
-      name: c['name'] || acc.name || acc.username,
+      name: fullName,
+      firstName: firstName || fullName,
+      lastName: lastName || '',
       email: c['preferred_username'] || acc.username,
+      phone: savedPhone,
       role: roles.some(r => ADMIN_ROLES.includes(r)) ? 'admin' : 'user',
       roles,
     };

@@ -11,10 +11,33 @@ export interface AuditEventDto { id: number; eventType: string; aggregateId: str
 export interface PageDto<T> { content: T[]; number: number; size: number; totalElements: number; totalPages: number; first: boolean; last: boolean; }
 export type ReservationAction = 'confirmar' | 'checkin' | 'checkout' | 'cancelar';
 
+export interface NotificacionDto {
+  id?: number | string;
+  destinatario?: string;
+  email?: string;
+  mensaje?: string;
+  asunto?: string;
+  tipo?: string;
+  estado?: string;
+  fecha?: string;
+  createdAt?: string;
+  timestamp?: string;
+  [key: string]: any;
+}
+
+export interface EnviarNotificacionBody {
+  destinatario: string;
+  mensaje: string;
+  asunto?: string;
+  tipo?: string;
+  [key: string]: any;
+}
+
 @Injectable({ providedIn: 'root' })
 export class Api {
   private http = inject(HttpClient);
   private base = azure.apiBaseUrl;
+  private notifyBase = azure.notifyApiUrl || azure.apiBaseUrl;
 
   units() { return this.http.get<UnitDto[]>(`${this.base}/api/catalog/units`); }
   createUnit(b: UnitBody) { return this.http.post<UnitDto>(`${this.base}/api/catalog/units`, b); }
@@ -33,5 +56,14 @@ export class Api {
     if (f.desde) p = p.set('desde', f.desde);
     if (f.hasta) p = p.set('hasta', f.hasta);
     return this.http.get<PageDto<AuditEventDto>>(`${this.base}/api/audit`, { params: p });
+  }
+
+  // Servicio Notify (API Gateway / Lambda)
+  notificaciones() {
+    return this.http.get<NotificacionDto[] | PageDto<NotificacionDto> | any>(`${this.notifyBase}/api/v1/notificaciones`);
+  }
+
+  enviarNotificacion(b: EnviarNotificacionBody) {
+    return this.http.post<any>(`${this.notifyBase}/enviar`, b);
   }
 }
