@@ -12,13 +12,15 @@ import { azure, msalConfig } from './app/core/auth-config';
 class App {}
 
 // El interceptor adjunta el access token a toda llamada que vaya al BFF o al servicio Notify/API Gateway.
+const toPattern = (url: string) => url.replace(/\/+$/, '') + '/*';
+
 const interceptorConfig = (): MsalInterceptorConfiguration => {
-  const map = new Map<string, string[]>([[azure.apiBaseUrl + '*', [azure.scope]]]);
+  const map = new Map<string, string[]>([[toPattern(azure.apiBaseUrl), [azure.scope]]]);
   if (azure.notifyApiUrl && azure.notifyApiUrl !== azure.apiBaseUrl) {
-    map.set(azure.notifyApiUrl + '*', [azure.scope]);
+    map.set(toPattern(azure.notifyApiUrl), [azure.scope]);
   }
   if (azure.notifyBaseUrl && azure.notifyBaseUrl !== azure.apiBaseUrl) {
-    map.set(azure.notifyBaseUrl + '*', [azure.scope]);
+    map.set(toPattern(azure.notifyBaseUrl), [azure.scope]);
   }
   return {
     interactionType: InteractionType.Redirect,
