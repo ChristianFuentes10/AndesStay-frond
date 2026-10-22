@@ -284,6 +284,7 @@ export class Messages implements OnInit {
         : res?.content ?? [];
       this.lista.set(items);
     } catch (e: any) {
+      console.error('[notify] cargar historial falló:', e);
       // Si notify aún no está levantado, mantenemos lo que hay (o vacío)
       if (this.lista().length === 0) {
         this.errMsg.set(this.httpError(e, 'GET /api/v1/notificaciones'));
@@ -322,11 +323,14 @@ export class Messages implements OnInit {
       this.warnMsg.set('Actualizando historial en 3 s...');
       setTimeout(() => { this.warnMsg.set(''); this.cargar(); }, 3000);
     } catch (e: any) {
+      console.error('[notify] enviar falló:', e);
       const st = e?.status;
-      if (!st || st === 0) {
-        // notify caído o CORS
+      if (e?.name?.includes('Auth') || e?.errorCode || e?.errorMessage) {
+        this.errMsg.set(`Error de sesión Azure (${e.errorCode || e.name}): Limpia los datos de sitio en F12 -> Application -> Storage -> Clear site data y vuelve a iniciar sesión.`);
+      } else if (!st || st === 0) {
+        // notify caído, CORS o fallo antes de enviar HTTP
         this.errMsg.set('No se pudo conectar con notify en ' + this.notifyUrl +
-          '. Verifica que esté corriendo (docker compose up).');
+          '. Revisa la consola de F12 (ver [notify] enviar falló).');
       } else {
         this.errMsg.set(this.httpError(e, 'POST /enviar'));
         // En demo local: agregar al listado como simulado

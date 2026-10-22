@@ -38,7 +38,30 @@ export class NotifyService {
 
   /** Envía una notificación al producer (RabbitMQ → consumer) */
   enviar(body: EnviarDto) {
-    return this.http.post<any>(`${this.base}/api/v1/notificaciones/enviar`, body);
+    const today = new Date();
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    const payload = {
+      canal: body.canal,
+      guestName: body.nombre?.trim() || body.destinatario?.trim() || 'Huésped',
+      guestEmail: body.email.trim(),
+      propertyName: 'AndesStay Lodge',
+      roomNumber: '101',
+      checkIn: today.toISOString().split('T')[0],
+      checkOut: tomorrow.toISOString().split('T')[0],
+      totalAmount: 150000,
+      currency: 'CLP',
+      operatorEmail: body.email.trim() || 'admin@andesstay.cl',
+      specialRequests: body.asunto ? `${body.asunto} - ${body.mensaje}` : body.mensaje,
+      // Campos originales por compatibilidad
+      destinatario: body.destinatario,
+      email: body.email,
+      nombre: body.nombre,
+      asunto: body.asunto,
+      mensaje: body.mensaje,
+    };
+
+    return this.http.post<any>(`${this.base}/api/v1/notificaciones/enviar`, payload);
   }
 
   /** Obtiene el historial de notificaciones */
