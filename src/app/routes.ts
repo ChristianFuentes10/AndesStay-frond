@@ -1,20 +1,30 @@
 import { Routes, Router } from '@angular/router';
 import { inject } from '@angular/core';
 import { Store } from './core/store';
+
 const auth = () => {
   const s = inject(Store);
   return s.user() ? true : inject(Router).parseUrl('/login');
 };
+
 const admin = () => {
   const s = inject(Store);
   return s.user()?.role === 'admin' ? true : inject(Router).parseUrl('/');
 };
+
 const audit = () =>
   inject(Store).can().audit ? true : inject(Router).parseUrl('/admin');
+
+const reportsGuard = () =>
+  inject(Store).can().reports ? true : inject(Router).parseUrl('/');
+
 const home = () => {
   const s = inject(Store);
+  const roles = s.user()?.roles || [];
+  if (roles.includes('AUDITOR')) return inject(Router).parseUrl('/reports');
   return s.user()?.role === 'admin' ? inject(Router).parseUrl('/admin') : true;
 };
+
 export const routes: Routes = [
   {
     path: 'login',
@@ -42,6 +52,11 @@ export const routes: Routes = [
       {
         path: 'reservas',
         loadComponent: () => import('./pages/bookings').then((m) => m.Bookings),
+      },
+      {
+        path: 'reports',
+        canActivate: [reportsGuard],
+        loadComponent: () => import('./pages/reports').then((m) => m.Reports),
       },
       {
         path: 'favoritos',

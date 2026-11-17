@@ -1,6 +1,7 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { Auth } from './auth';
+import { CognitoAuth } from './cognito.service';
 import { Api, ReservationAction, ReservationDto, UnitDto } from './api';
 import { translateReservationError } from './errors';
 
@@ -95,9 +96,10 @@ export interface BookResult {
 @Injectable({ providedIn: 'root' })
 export class Store {
   private auth = inject(Auth);
+  private cognito = inject(CognitoAuth);
   private api = inject(Api);
-  /** true cuando la sesión es Microsoft: los datos vienen del BFF; si no, se usan los datos de demostración. */
-  live = !!this.auth.initialUser;
+  /** true cuando hay una sesión activa de Cognito o Microsoft: los datos vienen del BFF. */
+  live = !!this.auth.initialUser || !!this.cognito.getAccessToken();
   loading = signal(false);
   notice = signal('');
   user = signal<User | null>(
@@ -166,6 +168,7 @@ export class Store {
   logout() {
     this.user.set(null);
     localStorage.removeItem('cg_user');
+    this.cognito.logout();
     if (this.auth.claims) this.auth.logout();
   }
   cabin(id: number) {
@@ -176,7 +179,7 @@ export class Store {
     const has = (...x: string[]) => x.some((y) => r.includes(y));
     if (!this.live) {
       const a = this.user()?.role === 'admin';
-      return { catalog: true, manage: a, book: true, remove: a, audit: a };
+      return { catalog: true, manage: a, book: true, remove: a, audit: a, reports: a };
     }
     return {
       catalog: has('ADMIN'),
@@ -184,6 +187,7 @@ export class Store {
       book: has('ADMIN', 'RECEPCIONISTA', 'HUESPED'),
       remove: has('ADMIN'),
       audit: has('ADMIN', 'AUDITOR'),
+      reports: has('ADMIN', 'AUDITOR'),
     };
   });
 
@@ -202,9 +206,111 @@ export class Store {
     try {
       await this.loadUnits();
       await this.loadBookings();
+      await this.loadUsers();
     } finally {
       this.loading.set(false);
     }
+  }
+
+  async loadUsers() {
+    if (this.can().manage || this.user()?.role === 'admin') {
+      try {
+        const list = await firstValueFrom(this.api.users());
+        if (Array.isArray(list) && list.length > 0) {
+          this.users.set(
+            list.map((u: any) => {
+              const roles: string[] = Array.isArray(u.roles)
+                ? u.roles.map((r: any) => (typeof r === 'string' ? r : r.name || r))
+                : [];
+              const fullName = `${u.nombre || ''} ${u.apellido || ''}`.trim() || u.email;
+              return {
+                name: fullName,
+                firstName: u.nombre || fullName,
+                lastName: u.apellido || '',
+                email: u.email,
+                phone: u.telefono || '+56 9 8452 1980',
+                role: roles.some((r) => ['ADMIN', 'RECEPCIONISTA', 'AUDITOR'].includes(r)) ? 'admin' : 'user',
+                roles,
+              };
+            })
+          );
+        }
+      } catch (e) {
+        // En caso de que no tenga permisos de admin para /api/users, se mantiene la lista actual
+      }
+    }
+  }
+
+  /**
+   * Sincroniza al usuario tras el login:
+   * 1. Llama POST /api/users (BFF) para auto-registro si no existe.
+   * 2. Llama GET /api/users/me (BFF) para obtener el perfil completo y roles.
+   */
+  async syncUserWithBackend(cognitoUser: { name: string; email: string; phone?: string; roles: string[] }) {
+    let firstName = cognitoUser.name || '';
+    let lastName = '';
+    const parts = (cognitoUser.name || '').trim().split(/\s+/);
+    if (parts.length >= 2) {
+      firstName = parts[0];
+      lastName = parts.slice(1).join(' ');
+    }
+
+    // 1. Intentar POST /api/users (BFF)
+    try {
+      await firstValueFrom(
+        this.api.registerUser({
+          nombre: firstName || 'Usuario',
+          apellido: lastName,
+          email: cognitoUser.email,
+          telefono: cognitoUser.phone || '',
+        })
+      );
+    } catch {
+      // Si ya existe (409) o no se permite re-registro, se ignora
+    }
+
+    // 2. Traer perfil desde GET /api/users/me
+    try {
+      const me = await firstValueFrom(this.api.me());
+      if (me) {
+        const roles: string[] = Array.isArray(me.roles)
+          ? me.roles.map((r: any) => (typeof r === 'string' ? r : r.name || r))
+          : (cognitoUser.roles || []);
+        const fullName = `${me.nombre || ''} ${me.apellido || ''}`.trim() || me.email;
+        const isAdmin = roles.some((r) => ['ADMIN', 'RECEPCIONISTA', 'AUDITOR'].includes(r));
+        const u: User = {
+          name: fullName,
+          firstName: me.nombre || fullName,
+          lastName: me.apellido || '',
+          email: me.email,
+          phone: me.telefono || cognitoUser.phone || '+56 9 8452 1980',
+          role: isAdmin ? 'admin' : 'user',
+          roles,
+        };
+        this.user.set(u);
+        localStorage.setItem('cg_user', JSON.stringify(u));
+        return u;
+      }
+    } catch (e) {
+      console.warn('GET /api/users/me falló, usando datos del token Cognito', e);
+    }
+
+    // Fallback con datos del token
+    const isAdmin = (cognitoUser.roles || []).some((r) =>
+      ['ADMIN', 'RECEPCIONISTA', 'AUDITOR'].includes(r)
+    );
+    const fallbackUser: User = {
+      name: cognitoUser.name || cognitoUser.email,
+      firstName,
+      lastName,
+      email: cognitoUser.email,
+      phone: cognitoUser.phone || '+56 9 8452 1980',
+      role: isAdmin ? 'admin' : 'user',
+      roles: cognitoUser.roles,
+    };
+    this.user.set(fallbackUser);
+    localStorage.setItem('cg_user', JSON.stringify(fallbackUser));
+    return fallbackUser;
   }
   private async loadUnits() {
     try {
