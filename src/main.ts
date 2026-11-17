@@ -65,7 +65,6 @@ bootstrapApplication(App, {
     { provide: HTTP_INTERCEPTORS, useClass: AuthInterceptor, multi: true },
     { provide: MSAL_INSTANCE, useFactory: () => new PublicClientApplication(msalConfig) },
     { provide: MSAL_INTERCEPTOR_CONFIG, useFactory: interceptorConfig },
-    { provide: HTTP_INTERCEPTORS, useClass: MsalInterceptor, multi: true },
     MsalService,
     MsalBroadcastService,
     {
