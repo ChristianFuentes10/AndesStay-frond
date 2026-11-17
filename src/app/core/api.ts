@@ -169,4 +169,31 @@ export class Api {
   enviarNotificacion(b: EnviarNotificacionBody) {
     return this.http.post<any>(`${this.notifyBase}/enviar`, b);
   }
+
+  // ---------- Servicio de Usuarios (ms-andesstay-users via BFF) ----------
+  registerUser(b: { nombre: string; apellido?: string; email: string; telefono?: string }) {
+    return this.http.post<any>(`${this.base}/api/users`, b);
+  }
+
+  me() {
+    return this.http.get<any>(`${this.base}/api/users/me`);
+  }
+
+  users(page = 0, size = 100) {
+    return this.http.get<any[]>(`${this.base}/api/users`, {
+      params: { page, size },
+    });
+  }
+
+  userById(id: string) {
+    return this.http.get<any>(`${this.base}/api/users/${id}`);
+  }
+
+  updateUser(id: string, b: any) {
+    return this.http.put<any>(`${this.base}/api/users/${id}`, b);
+  }
+
+  deleteUser(id: string) {
+    return this.http.delete<void>(`${this.base}/api/users/${id}`);
+  }
 }

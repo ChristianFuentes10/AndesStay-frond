@@ -224,12 +224,14 @@ export class Shell {
         ['Reservas', '/admin/reservas', '📅'],
         ['Usuarios', '/admin/usuarios', '👥'],
         ...(this.s.can().audit ? [['Auditoría', '/admin/auditoria', '🧾']] : []),
+        ...(this.s.can().reports ? [['Reportes KPI', '/reports', '📊']] : []),
         ['Mensajes', '/admin/mensajes', '✉'],
         ['Mi Perfil', '/perfil', '👤']
       ]
     : [
         ['Inicio', '/', '⌂'],
         ['Mis Reservas', '/reservas', '📅'],
+        ...(this.s.can().reports ? [['Reportes KPI', '/reports', '📊']] : []),
         ['Favoritos', '/favoritos', '♡'],
         ['Mensajes', '/mensajes', '✉'],
         ['Mi Perfil', '/perfil', '👤']
